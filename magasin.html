@@ -1,0 +1,220 @@
+<head>
+    <meta charset="utf-8" />
+    <title>Magasin Chimie</title>
+    <link href="https://unpkg.com/tabulator-tables@6.2.1/dist/css/tabulator_site.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@6.2.1/dist/js/tabulator.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.3/jspdf.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.6/jspdf.plugin.autotable.min.js"></script>
+	<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+	<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+	<link href="./css/style.css" rel="stylesheet">
+</head>
+
+
+<body>
+    <script type="text/javascript" src="./data.js"></script>
+
+<div class=wrapper style="margin: 30 30; ">
+<div class="table-controls" >
+	<input  id="searchTable" type="text" placeholder="Search ..." >
+	<button id="achats"     DISABLED title="Continuer Achats"><span class="material-symbols-outlined">add_shopping_cart</span></button>
+	<button id="commande"            title="Voir Panier"><span class="material-symbols-outlined">shopping_basket</span></button>
+	<button id="restart"    DISABLED title="Vider Panier"><span class="material-symbols-outlined">shopping_cart_off</span></button>
+	<button id="export-pdf" DISABLED title="Bon Commande"><span class="material-symbols-outlined">local_shipping</span></button>	
+</div>
+<p/>
+<div id="tabulator"></div>
+</div>
+
+<script>
+// horizontal product: https://jsfiddle.net/nzxbcf7g/
+//       vertical sum: https://tabulator.info/docs/6.2/column-calcs#func-builtin
+//             footer: https://tabulator.info/docs/6.2/layout#footer
+// components: https://tabulator.info/docs/6.2/components
+
+let searchBar = document.getElementById("searchTable");
+
+const updateTotal = (cell) => {
+  let data = cell.getData();
+  let quantite = cell.getValue() || 0;
+  let sum = Number(data['Quantité']) * parseFloat(data.PrixC) * 100;
+  let row = cell.getRow();
+  cell.setValue(quantite);
+  row.update({
+    "Total": (quantite > 0) ? Math.floor(sum)/100 : undefined,
+	"Quantité": quantite
+  });
+}
+
+const formatter = new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2
+  })
+
+function customSumTotal(values, data){
+    //values - array of column values
+    //data - all table data
+	let sum = values.reduce((acc, val) => {return acc + (parseFloat(val) || 0)},0);
+	return formatter.format(sum);
+}
+
+
+// col = table.getRows()[0].getCells()[9].getColumn()
+// col.getCells().forEach(cell => console.log(cell.getValue()))
+// col.getCells().map(cell => cell.getValue()).reduce((acc, val) => {return acc+val},0)
+
+const cbTooltip = (e, cell, onRendered) => {
+	//e - mouseover event
+	//cell - cell component
+	//onRendered - onRendered callback registration function
+	
+	let el = document.createElement("div");
+	el.className = "tooltip";
+	el.innerText = "Click on me";
+	
+	return el; 
+}
+
+var table = new Tabulator("#tabulator", {
+	height: '700px',
+	layout: "fitColumns",
+	pagination: true,
+	paginationSize: 30,
+	selectableRows:false,
+	data: data,
+    langs:{
+        "default":{
+			"pagination":{
+				"first":"<i class=\"material-icons\">first_page</i>",
+				"last": "<i class=\"material-icons\">last_page</i>",
+				"prev": "<i class=\"material-icons\">chevron_left</i>",
+				"next": "<i class=\"material-icons\">chevron_right</i>",
+			}
+        }
+    },
+    //autoColumns:true,
+	columns:[
+	{title:"No", field:"Id", headerHozAlign:"center", hozAlign:"right", width:60},
+	{title:"Type", field:"Type", headerHozAlign:"center"},
+	{title:"Référence", field:"Référence", headerHozAlign:"center"},
+	{title:"Quantité", field:"Quantité", headerHozAlign:"center", hozAlign:"right", editor:"number",
+		editorParams:{min: 0, selectContents: true}, cellEdited: updateTotal, tooltip: cbTooltip
+	},
+	{title:"Désignation", field:"Désignation", headerHozAlign:"center", width:600 },
+	{title:"Unité/Vente", field:"Unité/Vente", headerHozAlign:"center"},
+	{title:"Prix/A", field:"PrixA", visible:false},
+	{title:"Prix/B", field:"PrixB", visible:false},
+	// currency formatter: https://tabulator.info/docs/6.2/format#formatter-money
+	{title:"Prix €", field:"PrixC", headerHozAlign:"center", hozAlign:"right", formatter:"money", formatterParams:{
+       decimal:",",
+       thousand:" ",
+       symbol:"",
+       symbolAfter:"",
+       //negativeSign:true,
+       //precision:false, default=2 decimals
+	}},
+	// https://tabulator.info/docs/6.2/column-calcs#format
+	// https://tabulator.info/docs/6.2/format#formatter-money
+	{title:"Montant €", field:"Total", headerHozAlign:"center", hozAlign:"right", 
+	bottomCalc: "sum", formatter:"money", formatterParams:{
+       decimal:",",
+       thousand:" ",
+       symbol:"",
+       symbolAfter:"",
+       //negativeSign:true,
+       //precision:false,
+	}, bottomCalcFormatter: "money", bottomCalcFormatterParams: { decimal: ",", thousand: " ", symbol:" €", symbolAfter:"p", /*precision:false,*/}
+	},
+
+	],
+
+});
+
+// https://tabulator.info/docs/6.2/filter
+// gestion des achats
+
+const clickEvent = (e) => {
+	let rows = table.getData().filter(u => u.Total > 0);
+    let action = e.target.parentNode.getAttribute('id');
+	e.preventDefault();
+	
+	switch (action) {
+	case 'commande':
+		if (rows.length > 0) {
+			table.addFilter("Quantité" , ">", 0);
+			document.getElementById("achats").disabled = false;
+			document.getElementById("commande").disabled = true;
+			document.getElementById("export-pdf").disabled = false;
+			document.getElementById("restart").disabled = false;
+	   } else {
+		alert ('Aucun article dans votre panier.');
+	   }
+	   break;
+	case 'achats':
+		// poursuivre les achats
+		document.getElementById("commande").disabled = false;
+		document.getElementById("restart").disabled = true;
+		document.getElementById("export-pdf").disabled = true;
+		if (rows.length > 0) {
+			document.getElementById("achats").disabled = true;
+			table.removeFilter("Quantité" , ">", 0);
+		}
+	   break;
+	case 'restart':
+		window.location.reload();
+	   break;
+	case 'export-pdf':
+		if (rows.length > 0) {
+			let total = document.querySelector('.tabulator-footer [tabulator-field=Total]').innerHTML;
+			let text = `Le Bon de commande d\'un montant de ${total} va être édité, continuer ?`;
+			if (confirm (text)) {
+				exportPDF();
+				window.location.reload();
+			}
+		}
+	   break;
+	}
+}
+document.querySelectorAll('.table-controls button').forEach(button => {
+    button.addEventListener('click', clickEvent, false);
+});
+
+//https://stackoverflow.com/questions/76208880/tabulator-global-search-across-multiple-columns
+//table.on("renderComplete", function(){
+//	console.log( "renderComplete" );
+//});
+
+const searchFilter = () => {
+	let searchValue = searchBar.value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+	
+	// Allows searching in multiple columns at the same time
+	let searchFields = ["Type","Référence","Désignation"];
+	let filterArray = searchFields.map((field) => {
+        // You can customize the properties here
+        return { field: field, type: 'LIKE', value: searchValue };
+    });
+
+    table.setFilter([filterArray])
+};
+
+searchBar.addEventListener("input", searchFilter );
+
+// Extended custom Filters
+// https://tabulator.info/docs/6.2/modules
+Tabulator.extendModule("filter", "filters", {
+    "LIKE":function(headerValue, rowValue, rowData, filterParams){
+        //headerValue - the value of the header filter element
+        //rowValue - the value of the column in this row
+        //rowData - the data for the row being filtered
+        //filterParams - params object passed to the headerFilterFuncParams property
+
+		let normalizedValue = rowValue.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+		const re = new RegExp( headerValue, 'i' );
+        return normalizedValue.match(re) !== null;
+    }
+});
+</script>
+
+<script type="text/javascript" src="./export-pdf.js" ></script>
+</body>
